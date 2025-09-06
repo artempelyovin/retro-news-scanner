@@ -1,0 +1,6 @@
+[project]
+name = "retro-news-scanner"
+version = "0.1.0"
+description = "Парсинг и отбор старых новостей"
+requires-python = ">=3.13"
+dependencies = []
