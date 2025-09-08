@@ -40,7 +40,7 @@ def main() -> None:
                 logging.info(
                     f"Текст статьи будет обрезан на {len(content) - MAX_CONTENT_LENGTH} сим. до {MAX_CONTENT_LENGTH}"
                 )
-                content = content[:MAX_CONTENT_LENGTH]
+                content = content[:MAX_CONTENT_LENGTH-3] + "..."
             current_prompt = prompt.format(title=title, content=content, published_date=published_date)
 
             start_time = datetime.now()
