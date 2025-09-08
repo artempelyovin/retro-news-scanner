@@ -44,7 +44,7 @@ def main() -> None:
             current_prompt = prompt.format(title=title, content=content, published_date=published_date)
 
             start_time = datetime.now()
-            response = ollama.generate(model=MODEL, prompt=current_prompt, keep_alive=0)
+            response = ollama.generate(model=MODEL, prompt=current_prompt)
             elapsed_time = datetime.now() - start_time
 
             try:
