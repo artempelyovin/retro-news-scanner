@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 
@@ -83,8 +84,30 @@ def add_prompt(conn, prompt: str) -> None:
     conn.commit()
 
 
-def add_news_evaluation(conn, news_id: int, model: str, prompt_id: int, scores: dict[str, Any]) -> None:
-    final_score = sum(score for score in scores.values()) / len(scores.values())  # mean score
+def add_news_evaluation(conn, news_id: int, model: str, prompt_id: int, scores: str, final_score: float) -> None:
     cur = conn.cursor()
-    cur.execute("INSERT INTO news_evaluations VALUES (?, ?, ?, ?, ?);", (news_id, model, prompt_id, scores, final_score))
+    cur.execute(
+        "INSERT INTO news_evaluations (news_id, model, prompt_id, scores, final_score)  VALUES (?, ?, ?, ?, ?);",
+        (news_id, model, prompt_id, scores, final_score),
+    )
     conn.commit()
+
+
+def get_prompt_by_id(conn, prompt_id) -> str | None:
+    cur = conn.cursor()
+    cur.execute("SELECT text FROM prompts WHERE id = ?; ", (prompt_id,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def get_news_without_evaluation(conn, limit: int = 100) -> list[tuple[Any, ...]]:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT news.* "
+        "FROM news "
+        "LEFT JOIN news_evaluations ON news.id = news_evaluations.news_id WHERE "
+        "news_evaluations.news_id IS NULL LIMIT ?;",
+        (limit,),
+    )
+    rows = cur.fetchall()
+    return rows

@@ -3,4 +3,6 @@ name = "retro-news-scanner"
 version = "0.1.0"
 description = "Парсинг и отбор старых новостей"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "ollama>=0.5.3",
+]
