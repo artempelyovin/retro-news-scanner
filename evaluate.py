@@ -1,7 +1,9 @@
 import json
 import logging
+import math
 import sqlite3
 from datetime import datetime
+from typing import Any
 
 import ollama
 
@@ -9,8 +11,8 @@ from config import config
 from service import get_news_without_evaluation, get_prompt_by_id, add_news_evaluation
 
 PROMPT_ID = 3
-MODEL = "qwen2.5:3b-instruct-q4_K_M"
-MAX_CONTENT_LENGTH = 800
+OLLAMA_MODEL = "qwen2.5:3b-instruct-q4_K_M"
+MAX_NEWS_CONTENT_LEN = 800
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,57 +20,70 @@ logging.basicConfig(
 )
 
 
+def process_and_evaluate_news(conn, prompt_template: str, news: tuple[Any, ...]) -> int:
+    news_id, url, title, content, published_date, *_ = news
+
+    if len(content) > MAX_NEWS_CONTENT_LEN:
+        content = content[: MAX_NEWS_CONTENT_LEN - 3] + "..."
+    prompt = prompt_template.format(title=title, content=content, published_date=published_date)
+
+    start_time = datetime.now()
+    response = ollama.generate(model=OLLAMA_MODEL, prompt=prompt)
+    elapsed_seconds = (datetime.now() - start_time).seconds
+
+    try:
+        scores = json.loads(response["response"])
+    except Exception:
+        logging.exception(f"Ошибка парсинга JSON для новости id={news_id}:")
+        return elapsed_seconds
+
+    final_score = sum(score for score in scores.values()) / len(scores.values())  # mean score
+    final_score = round(final_score, 2)
+
+    try:
+        add_news_evaluation(
+            conn,
+            news_id=news_id,
+            model=OLLAMA_MODEL,
+            prompt_id=PROMPT_ID,
+            scores=json.dumps(scores),
+            final_score=final_score,
+        )
+    except Exception:
+        logging.exception(f"Ошибка записи в БД для id={news_id}:")
+    return elapsed_seconds
+
+
 def main() -> None:
     conn = sqlite3.connect(config.database_file)
 
-    prompt = get_prompt_by_id(conn, PROMPT_ID)
-    if not prompt:
+    prompt_template = get_prompt_by_id(conn, PROMPT_ID)
+    if not prompt_template:
         logging.error(f"Промпт с id={PROMPT_ID} не найден")
         return
 
     logging.info("Старт обработки новостей")
 
+    min_elapsed_time = math.inf
+    max_elapsed_time = 0
+    total_elapsed_time = 0
+    processed_count = 1
+
     while True:
         news_batch = get_news_without_evaluation(conn)
-
         for news in news_batch:
-            news_id, url, title, content, published_date, *_ = news
-            cut_title = title[:80] if len(title) > 80 else title
-            logging.info(f"Обработка новости '{cut_title}' (id={news_id})")
-
-            if len(content) > MAX_CONTENT_LENGTH:
-                logging.info(
-                    f"Текст статьи будет обрезан на {len(content) - MAX_CONTENT_LENGTH} сим. до {MAX_CONTENT_LENGTH}"
-                )
-                content = content[:MAX_CONTENT_LENGTH-3] + "..."
-            current_prompt = prompt.format(title=title, content=content, published_date=published_date)
-
-            start_time = datetime.now()
-            response = ollama.generate(model=MODEL, prompt=current_prompt)
-            elapsed_time = datetime.now() - start_time
-
-            try:
-                scores = json.loads(response["response"])
-            except Exception:
-                logging.exception(f"Ошибка парсинга JSON для новости id={news_id}:")
-                continue
-
-            final_score = sum(score for score in scores.values()) / len(scores.values())  # mean score
-            final_score = round(final_score, 2)
-
-            try:
-                add_news_evaluation(
-                    conn,
-                    news_id=news_id,
-                    model=MODEL,
-                    prompt_id=PROMPT_ID,
-                    scores=json.dumps(scores),
-                    final_score=final_score,
-                )
-
-                logging.info(f"Вердикт за {elapsed_time.seconds} сек.: {final_score} ({scores})")
-            except Exception:
-                logging.exception(f"Ошибка записи в БД для id={news_id}:")
+            elapsed_time = process_and_evaluate_news(conn, prompt_template, news)
+            if elapsed_time < min_elapsed_time:
+                min_elapsed_time = elapsed_time
+            if elapsed_time > max_elapsed_time:
+                max_elapsed_time = elapsed_time
+            total_elapsed_time += elapsed_time
+            mean_time = round(total_elapsed_time / processed_count, 2)
+            logging.info(
+                f"[{processed_count}] Затрачено {elapsed_time} сек "
+                f"(среднее: {mean_time} сек; лучшее: {min_elapsed_time} сек; худшее: {max_elapsed_time}) "
+            )
+            processed_count += 1
 
 
 if __name__ == "__main__":
