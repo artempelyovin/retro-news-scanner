@@ -10,6 +10,7 @@ from service import get_news_without_evaluation, get_prompt_by_id, add_news_eval
 
 PROMPT_ID = 3
 MODEL = "qwen2.5:3b-instruct-q4_K_M"
+MAX_CONTENT_LENGTH = 800
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,19 +32,23 @@ def main() -> None:
         news_batch = get_news_without_evaluation(conn)
 
         for news in news_batch:
-            start_time = datetime.now()
             news_id, url, title, content, published_date, *_ = news
             cut_title = title[:80] if len(title) > 80 else title
-            logging.info(f"Обработка новости '{cut_title}' ({len(content)} симв) (id={news_id})")
+            logging.info(f"Обработка новости '{cut_title}' (id={news_id})")
 
+            if len(content) > MAX_CONTENT_LENGTH:
+                logging.info(
+                    f"Текст статьи будет обрезан на {len(content) - MAX_CONTENT_LENGTH} сим. до {MAX_CONTENT_LENGTH}"
+                )
+                content = content[:MAX_CONTENT_LENGTH]
             current_prompt = prompt.format(title=title, content=content, published_date=published_date)
-            response = ollama.chat(
-                model=MODEL,
-                messages=[{"role": "user", "content": current_prompt}],
-            )
+
+            start_time = datetime.now()
+            response = ollama.generate(model=MODEL, prompt=current_prompt, keep_alive=0)
+            elapsed_time = datetime.now() - start_time
 
             try:
-                scores = json.loads(response["message"]["content"])
+                scores = json.loads(response["response"])
             except Exception:
                 logging.exception(f"Ошибка парсинга JSON для новости id={news_id}:")
                 continue
@@ -60,7 +65,7 @@ def main() -> None:
                     scores=json.dumps(scores),
                     final_score=final_score,
                 )
-                elapsed_time = datetime.now() - start_time
+
                 logging.info(f"Вердикт за {elapsed_time.seconds} сек.: {final_score} ({scores})")
             except Exception:
                 logging.exception(f"Ошибка записи в БД для id={news_id}:")
