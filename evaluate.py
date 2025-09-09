@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import sqlite3
+import argparse
 from datetime import datetime
 from typing import Any
 
@@ -10,21 +11,23 @@ import ollama
 from config import config
 from service import get_news_without_evaluation, get_prompt_by_id, add_news_evaluation
 
-PROMPT_ID = 3
-OLLAMA_MODEL = "qwen2.5:7b-instruct-q4_K_M"
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
 
-def process_and_evaluate_news(conn, prompt_template: str, news: tuple[Any, ...]) -> int:
+def process_and_evaluate_news(
+    conn, prompt_template: str, news: tuple[Any, ...], ollama_model: str, max_news_content_len: int
+) -> int:
     news_id, url, title, content, published_date, *_ = news
+
+    if max_news_content_len and len(content) > max_news_content_len:
+        content = content[: max_news_content_len - 3] + "..."
     prompt = prompt_template.format(title=title, content=content, published_date=published_date)
 
     start_time = datetime.now()
-    response = ollama.generate(model=OLLAMA_MODEL, prompt=prompt)
+    response = ollama.generate(model=ollama_model, prompt=prompt)
     elapsed_seconds = (datetime.now() - start_time).seconds
 
     try:
@@ -40,8 +43,8 @@ def process_and_evaluate_news(conn, prompt_template: str, news: tuple[Any, ...])
         add_news_evaluation(
             conn,
             news_id=news_id,
-            model=OLLAMA_MODEL,
-            prompt_id=PROMPT_ID,
+            model=ollama_model,
+            prompt_id=args.prompt_id,
             scores=json.dumps(scores),
             final_score=final_score,
         )
@@ -53,12 +56,15 @@ def process_and_evaluate_news(conn, prompt_template: str, news: tuple[Any, ...])
 def main() -> None:
     conn = sqlite3.connect(config.database_file)
 
-    prompt_template = get_prompt_by_id(conn, PROMPT_ID)
+    prompt_template = get_prompt_by_id(conn, args.prompt_id)
     if not prompt_template:
-        logging.error(f"Промпт с id={PROMPT_ID} не найден")
+        logging.error(f"Промпт с id={args.prompt_id} не найден")
         return
 
-    logging.info("Старт обработки новостей")
+    logging.info(
+        f"Старт обработки новостей с параметрами: prompt_id={args.prompt_id}, "
+        f"model={args.ollama_model}, max_content_len={args.max_news_content_len}"
+    )
 
     min_elapsed_time = math.inf
     max_elapsed_time = 0
@@ -68,7 +74,9 @@ def main() -> None:
     while True:
         news_batch = get_news_without_evaluation(conn)
         for news in news_batch:
-            elapsed_time = process_and_evaluate_news(conn, prompt_template, news)
+            elapsed_time = process_and_evaluate_news(
+                conn, prompt_template, news, args.ollama_model, args.max_news_content_len
+            )
             if elapsed_time < min_elapsed_time:
                 min_elapsed_time = elapsed_time
             if elapsed_time > max_elapsed_time:
@@ -83,4 +91,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Обработка и оценка новостей с использованием Ollama")
+
+    parser.add_argument("--prompt-id", type=int, required=True, help="ID промпта из базы данных")
+    parser.add_argument("--ollama-model", type=str, required=True, help="Название модели Ollama для использования")
+    parser.add_argument(
+        "--max-news-content-len", type=int, default=None, help="Максимальная длина контента новости (по умолчанию: 800)"
+    )
+    args = parser.parse_args()
     main()
