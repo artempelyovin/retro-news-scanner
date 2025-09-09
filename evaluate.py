@@ -11,8 +11,7 @@ from config import config
 from service import get_news_without_evaluation, get_prompt_by_id, add_news_evaluation
 
 PROMPT_ID = 3
-OLLAMA_MODEL = "qwen2.5:3b-instruct-q4_K_M"
-MAX_NEWS_CONTENT_LEN = 800
+OLLAMA_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,9 +21,6 @@ logging.basicConfig(
 
 def process_and_evaluate_news(conn, prompt_template: str, news: tuple[Any, ...]) -> int:
     news_id, url, title, content, published_date, *_ = news
-
-    if len(content) > MAX_NEWS_CONTENT_LEN:
-        content = content[: MAX_NEWS_CONTENT_LEN - 3] + "..."
     prompt = prompt_template.format(title=title, content=content, published_date=published_date)
 
     start_time = datetime.now()
