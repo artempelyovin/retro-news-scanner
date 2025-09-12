@@ -35,8 +35,12 @@ def process_and_evaluate_news(
     except Exception:
         logging.exception(f"Ошибка парсинга JSON для новости id={news_id}:")
         return elapsed_seconds
+    try:
+        final_score = sum(score for score in scores.values()) / len(scores.values())  # mean score
+    except Exception:
+        logging.exception(f"Ошибка вычисления 'final_score' для {scores=}:")
+        return elapsed_seconds
 
-    final_score = sum(score for score in scores.values()) / len(scores.values())  # mean score
     final_score = round(final_score, 2)
 
     try:
