@@ -73,6 +73,8 @@ def main() -> None:
 
     while True:
         news_batch = get_news_without_evaluation(conn)
+        if not news_batch:
+            break
         for news in news_batch:
             elapsed_time = process_and_evaluate_news(
                 conn, prompt_template, news, args.ollama_model, args.max_news_content_len
